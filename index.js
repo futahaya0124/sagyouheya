@@ -138,6 +138,9 @@ client.once('ready', () => {
   });
 
   console.log('毎日18時に投稿するよう設定したよ！');
+  postDailyMessage(); // テスト投稿
+
+
 });
 
 // ボタンが押されたとき
