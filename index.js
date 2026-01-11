@@ -130,15 +130,14 @@ client.once('ready', () => {
   console.log(`${client.user.tag} がログインしたよ！`);
 
   // 毎日18時（日本時間）に投稿 - cronは UTC なので 9時間引いて 9:00 UTC = 18:00 JST
-  cron.schedule('0 9 * * *', () => {
-    console.log('18時になったよ！投稿するね');
+  cron.schedule('0 19 * * *', () => {
+    console.log('19時になったよ！投稿するね');
     postDailyMessage();
   }, {
     timezone: 'Asia/Tokyo'
   });
 
-  console.log('毎日18時に投稿するよう設定したよ！');
-  postDailyMessage(); // テスト投稿
+  console.log('毎日19時に投稿するよう設定したよ！');
 
 
 });
