@@ -80,40 +80,41 @@ function createEmbed(messageId) {
     .setColor(0x00AE86)
     .setTitle('🔧 今日の作業はどうする？')
     .setDescription(`**${today}** のガンプラ作業通話の参加状況だよ！\nまずは下のボタンから参加するか選んでね✨`)
-    .addFields(
-      {
-        name: `🔥 やる！（${joinCount}人）`,
-        value: '\u200b',
-        inline: false
-      },
-      {
-        name: `　🌙 22時頃から（${data.time_22.length}人）`,
-        value: data.time_22.length > 0 ? data.time_22.join(', ') : '_まだいないよ_',
-        inline: false
-      },
-      {
-        name: `　🌃 23時頃から（${data.time_23.length}人）`,
-        value: data.time_23.length > 0 ? data.time_23.join(', ') : '_まだいないよ_',
-        inline: false
-      },
-      {
-        name: `　🌛 24時以降（${data.time_24.length}人）`,
-        value: data.time_24.length > 0 ? data.time_24.join(', ') : '_まだいないよ_',
-        inline: false
-      },
-      {
-        name: `🤔 やるかわからん（${data.maybe.length}人）`,
-        value: data.maybe.length > 0 ? data.maybe.join(', ') : '_まだいないよ_',
-        inline: false
-      },
-      {
-        name: `😴 今日はやらない（${data.skip.length}人）`,
-        value: data.skip.length > 0 ? data.skip.join(', ') : '_まだいないよ_',
-        inline: false
-      }
-    )
     .setFooter({ text: 'ボタンは何度でも押し直せるよ！' })
     .setTimestamp();
+
+  // 参加者がいる枠だけ表示
+  const fields = [];
+
+  // 「やる！」系（1人でもいれば親カテゴリ表示）
+  if (joinCount > 0) {
+    fields.push({ name: `🔥 やる！（${joinCount}人）`, value: '\u200b', inline: false });
+
+    if (data.time_22.length > 0) {
+      fields.push({ name: `　🌙 22時頃から（${data.time_22.length}人）`, value: data.time_22.join(', '), inline: false });
+    }
+    if (data.time_23.length > 0) {
+      fields.push({ name: `　🌃 23時頃から（${data.time_23.length}人）`, value: data.time_23.join(', '), inline: false });
+    }
+    if (data.time_24.length > 0) {
+      fields.push({ name: `　🌛 24時以降（${data.time_24.length}人）`, value: data.time_24.join(', '), inline: false });
+    }
+  }
+
+  if (data.maybe.length > 0) {
+    fields.push({ name: `🤔 やるかわからん（${data.maybe.length}人）`, value: data.maybe.join(', '), inline: false });
+  }
+
+  if (data.skip.length > 0) {
+    fields.push({ name: `😴 今日はやらない（${data.skip.length}人）`, value: data.skip.join(', '), inline: false });
+  }
+
+  // 誰もいない場合
+  if (fields.length === 0) {
+    fields.push({ name: 'まだ誰も押してないよ！', value: '下のボタンから参加してね🙌', inline: false });
+  }
+
+  embed.addFields(fields);
 
   return embed;
 }
