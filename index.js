@@ -70,10 +70,8 @@ function createInitialData() {
 // 参加状況のEmbedを作成
 function createEmbed(messageId) {
   const data = participants.get(messageId) || createInitialData();
-
   const today = new Date().toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
 
-  // やる人の合計
   const joinCount = data.time_22.length + data.time_23.length + data.time_24.length;
 
   const embed = new EmbedBuilder()
@@ -83,13 +81,10 @@ function createEmbed(messageId) {
     .setFooter({ text: 'ボタンは何度でも押し直せるよ！' })
     .setTimestamp();
 
-  // 参加者がいる枠だけ表示
   const fields = [];
 
-  // 「やる！」系（1人でもいれば親カテゴリ表示）
   if (joinCount > 0) {
     fields.push({ name: `🔥 やる！（${joinCount}人）`, value: '\u200b', inline: false });
-
     if (data.time_22.length > 0) {
       fields.push({ name: `　🌙 22時頃から（${data.time_22.length}人）`, value: data.time_22.join(', '), inline: false });
     }
@@ -109,13 +104,11 @@ function createEmbed(messageId) {
     fields.push({ name: `😴 今日はやらない（${data.skip.length}人）`, value: data.skip.join(', '), inline: false });
   }
 
-  // 誰もいない場合
   if (fields.length === 0) {
     fields.push({ name: 'まだ誰も押してないよ！', value: '下のボタンから参加してね🙌', inline: false });
   }
 
   embed.addFields(fields);
-
   return embed;
 }
 
@@ -130,7 +123,7 @@ function removeUserFromAll(data, userName) {
 async function postDailyMessage() {
   const channel = client.channels.cache.get(process.env.CHANNEL_ID);
   if (!channel) {
-    console.error('チャンネルが見つからないよ！CHANNEL_IDを確認してね');
+    console.error('チャンネルが見つからないよ！');
     return;
   }
 
@@ -143,27 +136,20 @@ async function postDailyMessage() {
   });
 
   participants.set(message.id, createInitialData());
-
   const updatedEmbed = createEmbed(message.id);
   await message.edit({ embeds: [updatedEmbed] });
 
-  console.log(`投稿したよ！ (${new Date().toLocaleString('ja-JP')})`);
+  console.log(`投稿完了！ (${new Date().toLocaleString('ja-JP')})`);
 }
 
 // Bot起動時
 client.once('ready', () => {
-  console.log(`${client.user.tag} がログインしたよ！`);
-
-  // 毎日18時（日本時間）に投稿
+  console.log(`${client.user.tag} がログイン！`);
   cron.schedule('0 18 * * *', () => {
-    console.log('18時になったよ！投稿するね');
     postDailyMessage();
-  }, {
-    timezone: 'Asia/Tokyo'
-  });
-
-  console.log('毎日18時に投稿するよう設定したよ！');
-  postDailyMessage(); // テスト投稿（本番では削除してね）
+  }, { timezone: 'Asia/Tokyo' });
+  
+  postDailyMessage(); // テスト用
 });
 
 // ボタンが押されたとき
@@ -173,57 +159,62 @@ client.on('interactionCreate', async (interaction) => {
   const { customId, user, message } = interaction;
   const userName = user.displayName || user.username;
 
-  // ===== 「やる！」ボタン → 時間選択を本人だけに表示 =====
+  // 「やる！」ボタン
   if (customId === 'join') {
     await interaction.reply({
       content: '何時から参加する？🕐',
       components: createTimeButtons(),
-      ephemeral: true  // 本人だけに見える
+      ephemeral: true
     });
     return;
   }
 
-  // ===== 時間選択ボタン（22時・23時・24時以降） =====
+  // 時間選択ボタン
   if (customId.startsWith('time_')) {
-    // participantsに登録されてる最新の募集メッセージを探す
     let targetMessageId = null;
     for (const [msgId] of participants) {
       targetMessageId = msgId;
     }
 
     if (!targetMessageId) {
-      await interaction.update({ content: '募集メッセージが見つからなかった…ごめん！', components: [] });
+      await interaction.update({ content: '募集が見つかりません', components: [] });
       return;
     }
 
     const data = participants.get(targetMessageId);
-    if (!data) {
-      await interaction.update({ content: '募集メッセージが見つからなかった…ごめん！', components: [] });
-      return;
-    }
-
-    // ユーザーを全枠から削除して、選んだ時間に追加
     removeUserFromAll(data, userName);
     data[customId].push(userName);
 
-    // 元の募集メッセージを更新
+    // 元のメッセージ更新
     try {
       const targetMessage = await interaction.channel.messages.fetch(targetMessageId);
       const updatedEmbed = createEmbed(targetMessageId);
       await targetMessage.edit({ embeds: [updatedEmbed], components: createMainButtons() });
     } catch (e) {
-      console.error('メッセージの更新に失敗:', e);
+      console.error('更新失敗:', e);
     }
 
+    // --- ここから改修部分 ---
     const timeLabel = customId === 'time_22' ? '22時頃から' : customId === 'time_23' ? '23時頃から' : '24時以降';
-    await interaction.update({
-      content: `✅ **${timeLabel}** で登録したよ！変更したい場合はもう一度ボタンを押してね`,
-      components: []
+    
+    // 1. 時間選択用メッセージを即座に削除
+    await interaction.message.delete().catch(() => {});
+
+    // 2. 完了したことを本人にだけ通知（一瞬出して消す）
+    await interaction.reply({
+      content: `✅ **${timeLabel}** で登録完了！`,
+      ephemeral: true
     });
+
+    // 3. 3秒後に「登録完了」の文字も消してチャット欄を無にする
+    setTimeout(() => {
+      interaction.deleteReply().catch(() => {});
+    }, 3000);
+    // -----------------------
     return;
   }
 
-  // ===== 「やるかわからん」「今日はやらない」ボタン =====
+  // 「わからん」「やらない」
   if (customId === 'maybe' || customId === 'skip') {
     if (!participants.has(message.id)) {
       participants.set(message.id, createInitialData());
@@ -242,5 +233,4 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// ログイン
 client.login(process.env.DISCORD_TOKEN);
