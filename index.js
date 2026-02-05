@@ -14,9 +14,9 @@ const participants = new Map();
 
 // ボタンの設定
 const TIME_SLOTS = {
-  'time_21': { label: '21時頃から', emoji: '🌙' },
-  'time_22': { label: '22時頃から', emoji: '🌃' },
-  'time_23': { label: '23時以降', emoji: '🌛' },
+  'time_22': { label: '22時頃から', emoji: '🌙' },
+  'time_23': { label: '23時以降', emoji: '🌃' },
+  'time_maybe': { label: 'やるかわからん', emoji: '🤔' },
   'time_skip': { label: '今日はやらない', emoji: '😴' }
 };
 
@@ -24,22 +24,22 @@ const TIME_SLOTS = {
 function createButtons() {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('time_21')
-      .setLabel('21時頃から')
+      .setCustomId('time_22')
+      .setLabel('22時頃から')
       .setEmoji('🌙')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId('time_22')
-      .setLabel('22時頃から')
+      .setCustomId('time_23')
+      .setLabel('23時以降')
       .setEmoji('🌃')
       .setStyle(ButtonStyle.Primary)
   );
 
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('time_23')
-      .setLabel('23時以降')
-      .setEmoji('🌛')
+      .setCustomId('time_maybe')
+      .setLabel('やるかわからん')
+      .setEmoji('🤔')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('time_skip')
@@ -54,9 +54,9 @@ function createButtons() {
 // 参加状況のEmbedを作成
 function createEmbed(messageId) {
   const data = participants.get(messageId) || {
-    time_21: [],
     time_22: [],
     time_23: [],
+    time_maybe: [],
     time_skip: []
   };
 
@@ -68,18 +68,18 @@ function createEmbed(messageId) {
     .setDescription(`**${today}** のガンプラ作業通話の参加状況だよ！\nボタンを押して参加表明してね✨`)
     .addFields(
       {
-        name: `🌙 21時頃から（${data.time_21.length}人）`,
-        value: data.time_21.length > 0 ? data.time_21.join(', ') : '_まだいないよ_',
-        inline: false
-      },
-      {
-        name: `🌃 22時頃から（${data.time_22.length}人）`,
+        name: `🌙 22時頃から（${data.time_22.length}人）`,
         value: data.time_22.length > 0 ? data.time_22.join(', ') : '_まだいないよ_',
         inline: false
       },
       {
-        name: `🌛 23時以降（${data.time_23.length}人）`,
+        name: `🌃 23時以降（${data.time_23.length}人）`,
         value: data.time_23.length > 0 ? data.time_23.join(', ') : '_まだいないよ_',
+        inline: false
+      },
+      {
+        name: `🤔 やるかわからん（${data.time_maybe.length}人）`,
+        value: data.time_maybe.length > 0 ? data.time_maybe.join(', ') : '_まだいないよ_',
         inline: false
       },
       {
@@ -112,9 +112,9 @@ async function postDailyMessage() {
 
   // 新しいメッセージの参加者データを初期化
   participants.set(message.id, {
-    time_21: [],
     time_22: [],
     time_23: [],
+    time_maybe: [],
     time_skip: []
   });
 
@@ -129,17 +129,16 @@ async function postDailyMessage() {
 client.once('ready', () => {
   console.log(`${client.user.tag} がログインしたよ！`);
 
-  // 毎日18時（日本時間）に投稿 - cronは UTC なので 9時間引いて 9:00 UTC = 18:00 JST
-  cron.schedule('0 19 * * *', () => {
-    console.log('19時になったよ！投稿するね');
+  // 毎日18時（日本時間）に投稿
+  cron.schedule('0 18 * * *', () => {
+    console.log('18時になったよ！投稿するね');
     postDailyMessage();
   }, {
     timezone: 'Asia/Tokyo'
   });
 
-  console.log('毎日19時に投稿するよう設定したよ！');
-
-
+  console.log('毎日18時に投稿するよう設定したよ！');
+  postDailyMessage(); // テスト投稿
 });
 
 // ボタンが押されたとき
@@ -151,9 +150,9 @@ client.on('interactionCreate', async (interaction) => {
   // このメッセージの参加者データを取得（なければ初期化）
   if (!participants.has(message.id)) {
     participants.set(message.id, {
-      time_21: [],
       time_22: [],
       time_23: [],
+      time_maybe: [],
       time_skip: []
     });
   }
