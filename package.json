@@ -1,14 +1,18 @@
 {
-  "name": "gunpla-work-bot",
+  "name": "discord-bot-render",
   "version": "1.0.0",
-  "description": "ガンプラ作業通話募集Bot",
-  "main": "index.js",
+  "description": "",
+  "main": "main.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node main.js"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "discord.js": "^14.14.1",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
     "node-cron": "^3.0.3",
-    "dotenv": "^16.3.1"
+    "express": "^4.18.2"
   }
 }
