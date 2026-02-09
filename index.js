@@ -1,3 +1,5 @@
+// index.js 全文
+
 // ---------------------------------------------------
 // 1. Renderで24時間動かすためのWebサーバー機能 (Express)
 // ---------------------------------------------------
@@ -5,10 +7,9 @@ const express = require('express');
 const app = express();
 
 app.get('/', (req, res) => {
-  res.send('Bot is alive! 🤖'); // UptimeRobotがアクセスした時に返す言葉
+  res.send('Bot is alive! 🤖');
 });
 
-// Renderが指定するポートで待ち受ける
 app.listen(process.env.PORT || 3000, () => {
   console.log('Web server is running!');
 });
@@ -25,12 +26,10 @@ const client = new Client({
   ]
 });
 
-// 参加者データを保持（メッセージIDごと）
 const participants = new Map();
 
 // --- ボタン作成関数 ---
 
-// メインボタン（やる・やるかわからん・今日はやらない）
 function createMainButtons() {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('join').setLabel('やる！').setEmoji('🔥').setStyle(ButtonStyle.Success),
@@ -40,24 +39,20 @@ function createMainButtons() {
   return [row];
 }
 
-// 時間選択ボタン（戻るボタンを追加！）
 function createTimeButtons() {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('time_22').setLabel('22時頃から').setEmoji('🌙').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('time_23').setLabel('23時頃から').setEmoji('🌃').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('time_24').setLabel('24時以降').setEmoji('🌛').setStyle(ButtonStyle.Primary),
-    // 戻るボタンを追加
     new ButtonBuilder().setCustomId('back').setLabel('戻る').setStyle(ButtonStyle.Secondary)
   );
   return [row];
 }
 
-// 初期データ
 function createInitialData() {
   return { time_22: [], time_23: [], time_24: [], maybe: [], skip: [] };
 }
 
-// 参加状況のEmbedを作成
 function createEmbed(messageId) {
   const data = participants.get(messageId) || createInitialData();
   const today = new Date().toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
@@ -89,3 +84,81 @@ function createEmbed(messageId) {
   }
 
   if (fields.length === 0) {
+    fields.push({ name: 'まだ誰も押してないよ！', value: '下のボタンから参加してね🙌', inline: false });
+  }
+
+  embed.addFields(fields);
+  return embed;
+}
+
+function removeUserFromAll(data, userName) {
+  for (const key of Object.keys(data)) {
+    data[key] = data[key].filter(name => name !== userName);
+  }
+}
+
+async function postDailyMessage() {
+  const channel = client.channels.cache.get(process.env.CHANNEL_ID);
+  if (!channel) return;
+
+  const embed = createEmbed('temp');
+  const message = await channel.send({
+    embeds: [embed],
+    components: createMainButtons()
+  });
+
+  participants.set(message.id, createInitialData());
+}
+
+client.once('ready', () => {
+  console.log(`${client.user.tag} がログイン！`);
+  cron.schedule('0 18 * * *', () => {
+    postDailyMessage();
+  }, { timezone: 'Asia/Tokyo' });
+});
+
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  const { customId, user, message } = interaction;
+  const userName = user.displayName || user.username;
+
+  if (!participants.has(message.id)) {
+    participants.set(message.id, createInitialData());
+  }
+  const data = participants.get(message.id);
+
+  if (customId === 'join') {
+    await interaction.update({
+      content: '🕒 **何時から始める？**',
+      embeds: [],
+      components: createTimeButtons()
+    });
+    return;
+  }
+
+  if (customId === 'back') {
+    await interaction.update({
+      content: '',
+      embeds: [createEmbed(message.id)],
+      components: createMainButtons()
+    });
+    return;
+  }
+
+  if (customId.startsWith('time_') || customId === 'maybe' || customId === 'skip') {
+    removeUserFromAll(data, userName);
+    if (customId !== 'back') {
+       data[customId].push(userName);
+    }
+
+    await interaction.update({
+      content: '',
+      embeds: [createEmbed(message.id)],
+      components: createMainButtons()
+    });
+    return;
+  }
+});
+
+client.login(process.env.DISCORD_TOKEN);
