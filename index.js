@@ -1,45 +1,71 @@
-// ---------------------------------------------------
-// 1. Renderで24時間動かすためのWebサーバー機能 (Express)
-// ---------------------------------------------------
-const express = require('express');
-const app = express();
+'use strict';
 
-app.get('/', (req, res) => {
-  res.send('Bot is alive! 🤖');
-});
-
-app.listen(process.env.PORT || 3000, () => {
-  console.log('✅ Web server is running!');
-});
-// ---------------------------------------------------
-
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Events } = require('discord.js');
-const cron = require('node-cron');
+// 1) dotenvは最上段（Renderでは不要でも害なし）
 require('dotenv').config();
 
-// ★ここが修正点！ Intent（許可証）をPortalの設定に合わせました
+const express = require('express');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Events } = require('discord.js');
+const cron = require('node-cron');
+
+// ======== 例外ハンドリング（沈黙防止） ========
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ unhandledRejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('❌ uncaughtException:', err);
+});
+
+// ======== Renderのヘルスチェック用Web ========
+const app = express();
+app.get('/', (_req, res) => res.send('Bot is alive! 🤖'));
+
+const port = Number(process.env.PORT || 3000);
+app.listen(port, () => {
+  console.log(`✅ Web server is running! port=${port}`);
+});
+
+// ======== 必須環境変数チェック ========
+const requiredEnv = ['DISCORD_TOKEN', 'CHANNEL_ID'];
+const missing = requiredEnv.filter((k) => !process.env[k] || String(process.env[k]).trim() === '');
+if (missing.length > 0) {
+  console.error(`❌ 必須環境変数が未設定です: ${missing.join(', ')}`);
+  console.error('   RenderのEnvironment設定→保存→Clear build cache & deploy（または手動再デプロイ）を確認してください。');
+  process.exit(1);
+}
+
+const token = String(process.env.DISCORD_TOKEN).trim();
+// トークンの一部だけ表示（安全）
+console.log(`🔐 TOKEN check: len=${token.length}, head=${token.slice(0, 6)}, tail=${token.slice(-6)}`);
+
+// ======== Discord Client ========
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // ← これを追加！
-  ]
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
+// discord.js 内部ログ（沈黙を潰す）
+client
+  .on('debug', (m) => console.log('🪵 debug:', m))
+  .on('warn', (m) => console.warn('⚠️ warn:', m))
+  .on('error', (e) => console.error('❌ client error:', e));
+
+// Shard系（接続が落ちる/張れないの検出）
+client.on('shardError', (error) => console.error('❌ shardError:', error));
+client.on('shardDisconnect', (event, shardId) => console.warn(`⚠️ shardDisconnect: shard=${shardId}`, event));
+client.on('shardReconnecting', (shardId) => console.warn(`⚠️ shardReconnecting: shard=${shardId}`));
+client.on('shardReady', (shardId) => console.log(`✅ shardReady: shard=${shardId}`));
+
+// RESTのレート制限（discord.js v14）
+client.rest.on('rateLimited', (info) => {
+  console.warn('⚠️ REST rateLimited:', info);
+});
+
+// ======== 参加者管理 ========
 const participants = new Map();
 
-// --- デバッグ用のログ機能（何が起きているか監視する） ---
-client.on('debug', (info) => {
-  // 接続状況などを詳しく知りたい場合はコメントアウトを外す
-  // console.log(`[DEBUG] ${info}`);
-});
-
-client.on('error', (error) => {
-  console.error('❌ Bot内部エラー発生:', error);
-});
-// ---------------------------------------------------
-
-// --- ボタン作成関数 ---
 function createMainButtons() {
   return [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('join').setLabel('やる！').setEmoji('🔥').setStyle(ButtonStyle.Success),
@@ -95,27 +121,42 @@ function removeUserFromAll(data, userName) {
 }
 
 async function postDailyMessage() {
-  const channel = client.channels.cache.get(process.env.CHANNEL_ID);
-  if (!channel) return console.error('❌ チャンネルが見つからないよ！IDを確認してね');
-  
-  const embed = createEmbed('temp');
-  const message = await channel.send({ embeds: [embed], components: createMainButtons() });
-  participants.set(message.id, createInitialData());
-  await message.edit({ embeds: [createEmbed(message.id)] });
-  console.log(`✅ 投稿完了！ (${new Date().toLocaleString('ja-JP')})`);
+  try {
+    // cache依存を排除してfetch
+    const channelId = String(process.env.CHANNEL_ID).trim();
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+
+    if (!channel || !channel.isTextBased()) {
+      console.error('❌ チャンネルが見つからない/テキストではありません。CHANNEL_IDを確認してね');
+      return;
+    }
+
+    const embed = createEmbed('temp');
+    const message = await channel.send({ embeds: [embed], components: createMainButtons() });
+    participants.set(message.id, createInitialData());
+    await message.edit({ embeds: [createEmbed(message.id)] });
+
+    console.log(`✅ 投稿完了！ (${new Date().toLocaleString('ja-JP')})`);
+  } catch (e) {
+    console.error('❌ postDailyMessage error:', e);
+  }
 }
 
-client.once(Events.ClientReady, c => {
+client.once(Events.ClientReady, (c) => {
   console.log(`🚀 ログイン成功！ Bot名: ${c.user.tag}`);
-  console.log(`STATUS: オンラインになりました`);
-  
-  cron.schedule('0 18 * * *', () => postDailyMessage(), { timezone: 'Asia/Tokyo' });
+
+  cron.schedule('0 18 * * *', () => {
+    console.log('⏰ cron fired: postDailyMessage');
+    void postDailyMessage();
+  }, { timezone: 'Asia/Tokyo' });
 });
 
-client.on(Events.InteractionCreate, async interaction => {
+client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
+
   const { customId, user, message } = interaction;
-  const userName = user.displayName || user.username;
+  // UserにはdisplayNameが無いので安全に（ギルドならmember優先）
+  const userName = interaction.member?.displayName || user.username;
 
   if (!participants.has(message.id)) participants.set(message.id, createInitialData());
   const data = participants.get(message.id);
@@ -130,18 +171,19 @@ client.on(Events.InteractionCreate, async interaction => {
   }
   if (customId.startsWith('time_') || customId === 'maybe' || customId === 'skip') {
     removeUserFromAll(data, userName);
-    if (customId !== 'back') data[customId].push(userName);
+    data[customId].push(userName);
     await interaction.update({ content: '', embeds: [createEmbed(message.id)], components: createMainButtons() });
   }
 });
 
-// --- ログイン処理（エラーハンドリング付き） ---
-console.log('🔑 ログインを試行します...');
-client.login(process.env.DISCORD_TOKEN)
-  .then(() => {
-    console.log('✅ ログイン処理が完了しました（Readyイベント待ち）');
-  })
-  .catch(error => {
-    console.error('❌ ログイン失敗！以下のエラーを確認してください:');
-    console.error(error);
-  });
+// ======== ログイン処理 ========
+(async () => {
+  console.log('🔑 ログインを試行します...');
+  try {
+    await client.login(token);
+    console.log('✅ client.login() resolved（Ready待ち）');
+  } catch (e) {
+    console.error('❌ ログイン失敗:', e);
+    process.exit(1);
+  }
+})();
